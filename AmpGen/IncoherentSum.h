@@ -39,6 +39,7 @@ namespace AmpGen
           @param eventType The type of event that this PDF should describe
           @param mps       The parameter set of couplings, masses, etc.
           @param prefix    Prefix required for the ``head'' decays for this event type. */ 
+      IncoherentSum();
       IncoherentSum(const EventType& eventType, const AmpGen::MinuitParameterSet& mps, const std::string& prefix = "Inco");
       
       /// Evaluates the normalised probability for an event.

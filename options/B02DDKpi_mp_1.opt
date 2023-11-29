@@ -1,0 +1,57 @@
+# Description of the amplitude for B0 -> D0,Dbar0,K+,pi-
+EventType B0 D0 Dbar0 K+ pi-
+
+Particle::SpinFormalism Canonical ## default = Covariant
+
+CouplingConstant::Coordinates  polar
+CouplingConstant::AngularUnits deg
+
+#HelAmps
+Long { 
+1.0 0 0 
+}
+
+Tran1 {  
+0.707106781 +1 +1
+0.707106781 -1 -1
+}
+
+Tran2 {
+0.707106781 +1 +1
+-0.707106781 -1 -1
+}
+
+#Decay mode	       										Amplitude    | Phase 
+B0[SpinFormalism=Canonical]{NonResS0{D0,Dbar0},K(0)*(1430)0[LASS]{K+,pi-}}			0  1.8 0.01   0  180  1
+B0[SpinFormalism=Canonical]{NonResS0{D0,Dbar0},K*(892)0{K+,pi-}}	          		0  1.8 0.01   0  180  1
+B0[SpinFormalism=Canonical]{D(s2)(2573)+{D0,K+},NonResS-{Dbar0,pi-}} 				0  1.8 0.01   0  180  1
+###
+B0[SpinFormalism=Canonical;helAmp=Long]{psi(3770)0{D0,Dbar0},K*(892)0{K+,pi-}}			2  1.0 0.00   2  0    0
+B0[SpinFormalism=Canonical;helAmp=Tran1]{psi(3770)0{D0,Dbar0},K*(892)0{K+,pi-}}			0  1.8 0.01   0  180  1
+B0[SpinFormalism=Canonical;helAmp=Tran2]{psi(3770)0{D0,Dbar0},K*(892)0{K+,pi-}}			0  1.8 0.01   0  180  1
+###
+B0[SpinFormalism=Canonical]{chi(c2)(2P)0{D0,Dbar0},K*(892)0{K+,pi-}}      	     	        0  1.8 0.01   0  180  1
+B0[SpinFormalism=Canonical]{chi(c0)(2P)0{D0,Dbar0},K*(892)0{K+,pi-}}      	     	        0  1.8 0.01   0  180  1 
+#B0[SpinFormalism=Canonical]{psi(4040)0{D0,Dbar0},K*(892)0{K+,pi-}}      	     	        0  1.8 0.10   0  180  10
+#B0[SpinFormalism=Canonical]{psi(4160)0{D0,Dbar0},K*(892)0{K+,pi-}}      	     	        0  1.8 0.01   0  180  1
+###
+B0[SpinFormalism=Canonical]{psi(3770)0{D0,Dbar0},K(0)*(1430)0[LASS]{K+,pi-}}			0  1.8 0.01   0  180  1 
+#B0[SpinFormalism=Canonical]{psi(4040)0{D0,Dbar0},K(0)*(1430)0[LASS]{K+,pi-}}			0  1.8 0.01   0  180  1
+#B0[SpinFormalism=Canonical]{psi(4160)0{D0,Dbar0},K(0)*(1430)0[LASS]{K+,pi-}}			0  1.8 0.01   0  180  1
+###
+#B0[SpinFormalism=Canonical]{chi(c2)(2P)0{D0,Dbar0},K(0)*(1430)0[LASS]{K+,pi-}}			0  0.0 0.01   0  587  1
+B0[SpinFormalism=Canonical]{chi(c0)(2P)0{D0,Dbar0},K(0)*(1430)0[LASS]{K+,pi-}}			0  1.8 0.01   0  180  1 
+###
+#B0[SpinFormalism=Canonical]{X0(2900)+{Dbar0,K+},NonResS-{D0,pi-}}				0  1.8 0.01   0  180  1
+B0[SpinFormalism=Canonical]{X1(2900)+{Dbar0,K+},NonResS-{D0,pi-}}				0  1.8 0.01   0  180  1
+B0[SpinFormalism=Canonical]{Z(4140)-{NonResS0{D0,Dbar0},pi-},K+}				0  1.8 0.01   0  180  1
+B0[SpinFormalism=Canonical]{Z(4540)+{NonResS0{D0,Dbar0},K+},pi-}				0  1.8 0.01   0  180  1
+#B0[SpinFormalism=Canonical]{Z(4140)-{NonResPWP0{D0,Dbar0},pi-},K+}				0  1.8 0.10   0  180  1
+#B0[SpinFormalism=Canonical]{Z(4540)+{NonResPWP0{D0,Dbar0},K+},pi-}				0  1.8 0.01   0  180  1
+#B0[SpinFormalism=Canonical]{Z(4540)+{D0,NonResPWP+{Dbar0,K+}},pi-}				0  1.8 0.01   0  180  1
+
+K(0)*(1430)0::LASS::a    2    2.07  0.00
+K(0)*(1430)0::LASS::r    2    3.32  0.00
+
+K(0)*(1430)bar0::LASS::a = K(0)*(1430)0::LASS::a
+K(0)*(1430)bar0::LASS::r = K(0)*(1430)0::LASS::r

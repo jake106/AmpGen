@@ -13,6 +13,7 @@
 #include "AmpGen/EventList.h"
 
 using namespace AmpGen;
+IncoherentSum::IncoherentSum() = default;
 
 IncoherentSum::IncoherentSum( const EventType& finalStates, 
                               const MinuitParameterSet& mps,
