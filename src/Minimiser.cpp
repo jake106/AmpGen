@@ -55,7 +55,7 @@ void Minimiser::operator()(int i, const ROOT::Minuit2::MinimumState & state)
     if (state.HasCovariance() && m_printLevel >= PrintLevel::VeryVerbose )
       INFO("Error matrix change = " << state.Error().Dcovar() );
   }
-  auto gradient = state.Gradient().Vec().Data(); 
+  //auto gradient = state.Gradient().Vec().Data(); 
   // Print parameter values during the minimisation (blind params are shifted by the blinding offset)
   if( m_printLevel >= PrintLevel::Verbose )
   { 
@@ -120,6 +120,7 @@ void Minimiser::prepare()
   std::string algorithm = NamedParameter<std::string>( "Minimiser::Algorithm", "Migrad");
   size_t maxCalls       = NamedParameter<size_t>( "Minimiser::MaxCalls"  , 100000);
   double tolerance      = NamedParameter<double>( "Minimiser::Tolerance" , 1.0);
+  double precision      = NamedParameter<double>( "Minimiser::Precision" , 1e-15);
   m_printLevel          = NamedParameter<PrintLevel>( "Minimiser::PrintLevel", PrintLevel::Info); 
   unsigned printLevelMinuit2 = NamedParameter<unsigned>("Minimiser::Minuit2MinimizerPrintLevel", m_printLevel == PrintLevel::VeryVerbose ? 3 : 0 );
   if( m_printLevel == PrintLevel::Invalid )
@@ -136,7 +137,7 @@ void Minimiser::prepare()
   m_minimiser->SetMaxFunctionCalls( maxCalls );
   m_minimiser->SetMaxIterations( 100000 );
   m_minimiser->SetTolerance( tolerance );
-  m_minimiser->SetPrecision( 1e-10 );
+  m_minimiser->SetPrecision( precision );
   m_minimiser->SetStrategy( 2 );
   m_minimiser->SetPrintLevel( printLevelMinuit2 ); // turn off minuit printing 
   m_mapping.clear();

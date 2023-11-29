@@ -65,11 +65,16 @@ void EventList::loadFromTree( TTree* tree, const ArgumentPack& args )
   ProfileClock read_time; 
   if( m_eventType.size() == 0 ){
     auto tokens = split( tree->GetTitle(), ' ');
-    if( tokens.size() != 1 ) m_eventType = EventType( tokens ); 
+    bool is_TD = false; 
+    for( auto br : *tree->GetListOfBranches() )
+    {
+      if( std::string( br->GetName() ).find("_decayTime") != std::string::npos) is_TD = true; 
+    }
+    if( tokens.size() != 1 ) m_eventType = EventType( tokens, is_TD ); 
     INFO("Attempted automatic deduction of eventType: " << m_eventType );
   } 
   auto filter       = args.getArg<Filter>(std::string("")).val;
-  auto getGenPdf    = args.getArg<GetGenPdf>(false).val;
+  auto getGenPdf    = args.getArg<GetGenPdf>(true).val;
   auto weightBranch = args.getArg<WeightBranch>(std::string("")).val;
   auto branches     = args.getArg<Branches>().val;
   auto extraBranches= args.getArg<ExtraBranches>().val; 
