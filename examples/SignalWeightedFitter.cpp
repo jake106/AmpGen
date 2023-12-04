@@ -16,6 +16,7 @@
 #include "AmpGen/EventType.h"
 #include "AmpGen/CoherentSum.h"
 #include "AmpGen/IncoherentSum.h"
+#include "AmpGen/BackgroundPdf.h"
 #include "AmpGen/FitResult.h"
 #include "AmpGen/Minimiser.h"
 #include "AmpGen/MinuitParameterSet.h"
@@ -311,19 +312,19 @@ FitResult* doFit(std::vector<EventList_type> data, std::vector<EventList_type> m
   SimFit likelihood;
  
   std::vector<CoherentSum> fcs(data.size());
-  std::vector<IncoherentSum> fcb(data.size());
+  std::vector<BackgroundPdf> fcb(data.size());
 
   //std::vector<SumPDF<EventList_type, CoherentSum&>> pdfs;
 
-  std::vector<SumPDF<EventList_type, CoherentSum&, IncoherentSum&>> pdfs;
+  std::vector<SumPDF<EventList_type, CoherentSum&, BackgroundPdf&>> pdfs;
 
   pdfs.reserve(data.size());
 
   for(size_t i = 0; i < data.size(); ++i){
     fcs[i] = CoherentSum(data[i].eventType(), MPS);
-    fcb[i] = IncoherentSum(data[i].eventType(), MPS, "Inco");
+    fcb[i] = BackgroundPdf(data[i].eventType(), MPS);
     fcs[i].setWeight(MPS["fPDF"]);
-    fcb[i].setWeight(MPS["fComb"]);
+    fcb[i].setWeight(MPS["fBkg"]);
     fcs[i].setMC(mc[i]);
     fcb[i].setMC(mc[i]);
     pdfs.emplace_back( make_pdf(fcs[i], fcb[i]) );
@@ -390,7 +391,7 @@ FitResult* doFit(std::vector<EventList_type> data, std::vector<EventList_type> m
   {
     INFO("Making figures for sample: " << i << " ...");
     auto evaluator_per_component = ( fcs[0] ).componentEvaluator(&mc[i]);
-    auto evaluator_per_component_bkg = ( fcb[0] ).componentEvaluator(&mc[i]);
+    //auto evaluator_per_component_bkg = ( fcb[0] ).componentEvaluator(&mc[i]);
     for( auto proj : data[i].eventType().defaultProjections(NBins) )
     {
       proj(data[i], PlotOptions::Prefix("Data"+std::to_string(i)), PlotOptions::AutoWrite() );
@@ -400,7 +401,7 @@ FitResult* doFit(std::vector<EventList_type> data, std::vector<EventList_type> m
 
     if( NamedParameter<bool>("AllComponents",false ) ) {
       proj(mc[i], evaluator_per_component, PlotOptions::Prefix("amp"+std::to_string(i)), PlotOptions::Norm(data[i].size()), PlotOptions::AutoWrite() );
-      proj(mc[i], evaluator_per_component_bkg, PlotOptions::Prefix("amp"+std::to_string(i)), PlotOptions::Norm(data[i].size()), PlotOptions::AutoWrite() );
+      //proj(mc[i], evaluator_per_component_bkg, PlotOptions::Prefix("amp"+std::to_string(i)), PlotOptions::Norm(data[i].size()), PlotOptions::AutoWrite() );
       }
 
       proj(mc[i]  , pdfs[i].componentEvaluator(&mc[i]), PlotOptions::Prefix("pdf"+std::to_string(i)), PlotOptions::Norm(data[i].size()), PlotOptions::AutoWrite() );

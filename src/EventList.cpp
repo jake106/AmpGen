@@ -113,6 +113,9 @@ void EventList::loadFromTree( TTree* tree, const ArgumentPack& args )
   }
   if( getGenPdf )          tr.setBranch( "genPdf",     temp.pGenPdf() );
   if( weightBranch != "" ) tr.setBranch( weightBranch, temp.pWeight() );
+  // CHANGES TO TRY AND INCORPERATE BKGPDF
+  tr.setBranch( "BkgPdf", temp.address(18) );
+
   if( filter != "" ){
     if( entryList.size() != 0 ){
       WARNING("Specified entry list and filter, will overwrite list with specified selection");
