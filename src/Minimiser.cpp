@@ -390,7 +390,7 @@ void Minimiser::setPrintLevel( const PrintLevel& printLevel)
     for (const auto& param : *m_parSet){
       if ( param->isBlind() ) FATAL("Minimiser::PrintLevel is == VeryVerbose, incompatible with having any Blind parameter");
     }
-    m_minimiser->SetPrintLevel( 2 );
+    m_minimiser->SetPrintLevel( 3 );
   }
   
 }
