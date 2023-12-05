@@ -1,5 +1,5 @@
 #ifndef AMPGEN_BACKGROUNDPDF_H
-#define AMPGEN_BACKGROUNDPDF_H 1 
+#define AMPGEN_BACKGROUNDPDF_H
 
 #include <memory.h>
 #include <stddef.h>
@@ -23,139 +23,101 @@
 #include "AmpGen/MinuitParameter.h"
 #include "AmpGen/Store.h"
 #include "AmpGen/KeyedFunctors.h"
-
-namespace AmpGen { 
-
-  class CompiledExpressionBase;
-  class MinuitParameter;
-  class MinuitParameterSet;
+namespace AmpGen
+{
   class LinearErrorPropagator;
+  class MinuitParameterSet;
   class FitFraction;
   class Particle;
 
+  /** @class BackgroundPdf
+      @brief Weights describing background pdf
+
+  */
   class BackgroundPdf
-    {
-    protected:
-      std::vector<MatrixElement> m_matrixElements;
-      std::vector<std::complex<double>> m_coefficients;
-      Bilinears m_normalisations; //// bilinear normalisation terms ////
-      AmplitudeRules m_protoAmplitudes;
-      double m_norm; 
-      EventList* m_events;
-      EventList* m_sim; 
-      EventType  m_evtType;
-      double m_weight; /// global weight, i.e. the yield ///
-      MinuitParameter* m_weightParam; 
-      std::vector<unsigned int> m_cacheAddresses; /// the addresses in the event cache for each PDF /// 
-      std::vector<unsigned int> m_cacheAddrInt;
-      int m_prepareCalls;
-      int m_lastPrint;
-      int m_printFreq;
-      Integrator m_integrator;
-      std::string m_prefix;
-      bool       m_stateIsGood;
-      bool       m_isConstant; 
-      bool       m_dbThis; 
-      bool       m_verbosity; 
-      void addMatrixElement( std::pair<Particle,Coupling>& particleWithCoupling ) ; 
-      bool isFixedPDF() const ;
-    public:
-      using EventList_type  = EventList;
-      BackgroundPdf( const EventType& type , 
-          AmpGen::MinuitParameterSet& mps ,
-          const std::string& prefix="" ) ; 
-         BackgroundPdf();
-      virtual ~BackgroundPdf(); 
-      double operator()( const Event& evt) const {
-        return prob(evt);
-      }
+  {
+  public:
+    #if ENABLE_AVX
+      //using EventList_type = EventListSIMD; 
+    #else 
+      using EventList_type  = EventList; 
+    #endif
+    BackgroundPdf();
+    BackgroundPdf( const EventType& type, const AmpGen::MinuitParameterSet& mps, const std::string& prefix = "" );
+    virtual ~BackgroundPdf(); 
 
-      AmplitudeRules protoAmplitudes(){ return m_protoAmplitudes ; }
-      std::vector<MatrixElement> matrixElements() { return m_matrixElements ; } 
+    std::string prefix() const { return m_prefix; }
+    
+    auto& operator[]( const size_t& index )       { return m_matrixElements[index]; }
+    auto& operator[]( const size_t& index ) const { return m_matrixElements[index]; }
+    size_t size()                          const { return m_matrixElements.size(); }
+    real_t getWeight()                     const { return m_weight; }
+    real_t norm( const Bilinears& norms )  const;
+    real_t norm() const;
+    real_t getNorm( const Bilinears& normalisations );
 
-      std::vector<unsigned int> processIndex(const std::string& label) const ;
-      std::string getParentProcess( const std::string& label ) const ;
+    complex_t norm( const size_t& x, const size_t& y ) const;
+    complex_t getVal( const Event& evt ) const;
+    complex_t getValNoCache( const Event& evt ) const; 
 
-      unsigned int getPdfIndex( const std::string& name ) const ;
-      void PConjugate(); 
+    void transferParameters();
+    void prepare();
+    void printVal( const Event& evt );
+    void updateNorms();
+    void setWeight( MinuitProxy param ) { m_weight = param; }
+    void makeTotalExpression();
+    void reset( bool resetEvents = false );
+    void setEvents( const EventList_type& list );
+    void setMC( const EventList_type& sim );
+    #if ENABLE_AVX
+      void setEvents( const EventList& list) { 
+        WARNING("Setting events from a AoS container, will need to make a copy");
+        m_ownEvents = true; setEvents( *(new EventListSIMD(list)) ) ; } 
+      void setMC    ( const EventList& list) { 
+        WARNING("Setting integration events from a AoS container, will need to make a copy");
+        setMC( *(new EventListSIMD(list)) ) ; } 
+      //double operator()(const double*, const unsigned) const; 
+    #endif
 
-      MatrixElement operator[]( const unsigned int& index ){
-        return m_matrixElements[index]; 
-      }
+    real_v operator()(const real_v*, const unsigned) const; 
+    real_t operator()(const Event& evt )             const { return m_weight*evt.bkgPdf(); }
 
-      std::string prefix() const { return m_prefix ; } 
+    void debug( const Event& evt, const std::string& nameMustContain="");
+    void generateSourceCode( const std::string& fname, const double& normalisation = 1, bool add_mt = false );
 
-      inline std::complex<double> amplitude( unsigned int i ) const {
-        return m_coefficients[i];
-      }
-      double getWeight() const { return m_weight; }
-      void setWeight( const double& weight ){ m_weight = weight ; }
-      void setWeight( MinuitParameter* param ){
-        m_weightParam = param ; 
-      }
-      unsigned int size() const { return m_matrixElements.size(); }
+    std::vector<FitFraction> fitFractions( const LinearErrorPropagator& linProp );
+    auto matrixElements() const { return m_matrixElements; }
 
-      void reset(bool resetEvents=false); 
-      void setEvents( EventList_type& list );
-      void setMC(EventList_type& sim ); 
+    std::map<std::string, std::vector<unsigned int>> getGroupedAmplitudes();
+    Bilinears norms() const { return m_normalisations ; }
+      
+    std::function<real_t(const Event&)> evaluator(const EventList_type* = nullptr) const; 
+    std::function<complex_t(const Event&)> amplitudeEvaluator(const EventList_type* = nullptr) const; 
+    KeyedFunctors<double(Event)> componentEvaluator(const EventList_type* = nullptr) const; 
+    EventType eventType() const { return m_evtType; } 
+  protected:
+    std::vector<MatrixElement> m_matrixElements;              ///< Vector of matrix elements
+    Bilinears        m_normalisations;                        ///< Normalisation integrals
+     
+    Integrator       m_integrator;                            ///< Tool to calculate integrals 
+    const EventList_type*  m_events       = {nullptr};        ///< Data events to evaluate PDF on
+    FunctionCache<EventList_type, complex_v, Alignment::AoS> m_cache; ///< Store of intermediate values for the PDF calculation 
 
-      double norm(const Bilinears& norms) const ;
-      double norm() const ;
-      std::complex<double> norm ( const unsigned int& x, const unsigned int & y ) const  ;
-      void transferParameters(); 
-      void preprepare();
-      void prepare() ;
-      void printVal( const Event& evt,bool isSim=false );
-      void updateNorms( const std::vector<unsigned int>& changedPdfIndices );
-      std::vector<unsigned int> cacheAddresses( const EventList& evts ) const {
-        std::vector<unsigned int> addresses;
-        //for( auto& mE : m_matrixElements ){
-          //addresses.push_back(  evts.getCacheIndex(mE.pdf) );
-        //}
-        return addresses;
-      }
-
-      std::complex<double> getVal( const Event& evt ) const {
-        std::complex<double> value(0.,0.);
-        //for( unsigned int i=0;i<m_coefficients.size();++i){
-          //value += m_coefficients[i]*evt.getCache(m_cacheAddresses[i]);
-        //}
-        return value;
-      }
-
-      std::complex<double> getval( const Event& evt, 
-          const std::vector<unsigned int>& cacheaddresses ) const {
-        std::complex<double> value(0.,0.);
-        //for( unsigned int i=0;i<m_coefficients.size();++i){
-        ////  info( m_coefficients[i] << " " << cacheaddresses.size() << " " << evt.cachesize() );
-          //value += m_coefficients[i]*evt.getCache(cacheAddresses[i]);
-        //}
-        return value;
-      }
-      std::complex<double> getValNoCache( const Event& evt ) ;
-
-      bool isStateGood(){ return m_stateIsGood ; } 
-      double prob( const Event& evt ) const {
-        //return m_weight * std::norm( getVal(evt) ) / m_norm ; 
-        return m_weight * evt[18] ; 
-      }
-      double prob_unnormalised( const Event& evt ) const {
-        //return std::norm( getVal( evt ) ) ;
-        return evt[18] ;
-      }
-      void debug( const unsigned int& N=0, const std::string& nameMustContain="") ; 
-
-      std::vector<FitFraction> fitFractions(const LinearErrorPropagator& linProp); 
-
-      void makeBinary( const std::string& fname , const double& normalisation=1) ; 
-
-      double getNorm( const Bilinears& normalisations); 
-      std::function<real_t(const Event&)> evaluator(const EventList_type* = nullptr) const; 
-      std::function<complex_t(const Event&)> amplitudeEvaluator(const EventList_type* = nullptr) const; 
-      KeyedFunctors<double(Event)> componentEvaluator(const EventList_type* = nullptr) const; 
-      void resync() ;  
-  }; 
-} 
+    bool             m_ownEvents    = {false};                ///< Flag as to whether events are owned by this PDF or not  
+    EventType        m_evtType;                               ///< Final state for this amplitude
+    size_t           m_prepareCalls = {0};                    ///< Number of times prepare has been called
+    size_t           m_lastPrint    = {0};                    ///< Last time verbose PDF info was printed
+    size_t           m_printFreq    = {0};                    ///< Frequency to print verbose PDF info
+    MinuitProxy      m_weight       = {nullptr, 1};           ///< Weight (i.e. the normalised yield)
+    double           m_norm         = {1};                    ///< Normalisation integral
+    bool             m_isConstant   = {true};                 ///< Flag for a constant PDF
+    bool             m_dbThis       = {false};                ///< Flag to generate amplitude level debugging
+    bool             m_verbosity    = {false};                ///< Flag for verbose printing
+    std::string      m_objCache     = {""};                   ///< Directory that contains (cached) amplitude objects
+    std::string      m_prefix       = {""};                   ///< Prefix for matrix elements
+    const MinuitParameterSet* m_mps = {nullptr};
+    void addMatrixElement( std::pair<Particle, TotalCoupling>& particleWithCoupling, const MinuitParameterSet& mps );
+  };
+} // namespace AmpGen
 
 #endif
-

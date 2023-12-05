@@ -1,481 +1,228 @@
 #include "AmpGen/BackgroundPdf.h"
-#include "AmpGen/MinuitParameterSet.h"
-#include "AmpGen/MinuitParameter.h"
-#include "AmpGen/ParticlePropertiesList.h"
-#include "AmpGen/Minimiser.h"
-#include "AmpGen/CompiledExpression.h"
-#include "AmpGen/EventList.h"
-#include "AmpGen/Utilities.h"
-#include "AmpGen/EventType.h"
-#include "AmpGen/FitFraction.h"
-#include "AmpGen/NamedParameter.h"
-#include "AmpGen/ErrorPropagator.h"
 
-/// STL
-#include <iomanip>
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <ctime>
-#include <fstream>
+#include <iomanip>
+#include <iostream>
+#include <numeric>
+#include <ratio>
+#include <thread>
 
-#ifdef __USE_OPENMP__
-  #include <omp.h>
+#include "AmpGen/CompiledExpression.h"
+#include "AmpGen/ErrorPropagator.h"
+#include "AmpGen/EventList.h"
+#include "AmpGen/EventType.h"
+#include "AmpGen/Expression.h"
+#include "AmpGen/FitFraction.h"
+#include "AmpGen/MinuitParameter.h"
+#include "AmpGen/MsgService.h"
+#include "AmpGen/NamedParameter.h"
+#include "AmpGen/Particle.h"
+#include "AmpGen/Utilities.h"
+#include "AmpGen/CompiledExpressionBase.h"
+#include "AmpGen/CompilerWrapper.h"
+#include "AmpGen/ThreadPool.h"
+#include "AmpGen/ProfileClock.h"
+#include "AmpGen/simd/utils.h"
+#include "AmpGen/Array.h"
+
+#ifdef _OPENMP
+#include <omp.h>
 #endif
 
-using namespace AmpGen; 
+using namespace AmpGen;
+BackgroundPdf::BackgroundPdf() = default; 
 
-void BackgroundPdf::addMatrixElement( std::pair<Particle,Coupling>& particleWithCoupling ){
-
-  //auto& protoParticle = particleWithCoupling.first ; 
-  //auto& coupling = particleWithCoupling.second; 
-
-  //if( !protoParticle.isStateGood() ){ 
-    //ERROR("Decay tree not configured correctly for " << protoParticle.uniqueString() );
-    //m_stateIsGood = false;
-    //return; 
-  //}
-  ////if( CPConjugate ) protoParticle.CPConjugateThis();
-  ////if( FlavConjugate ) protoParticle.setConj(true);
-  //const std::string name = protoParticle.uniqueString();
-  //std::vector<DBSYMBOL> dbExpressions;
-  //INFO( "Matrix Element = " << name ); 
-  //const Expression expression = 
-    //protoParticle.getExpression(m_dbThis?&dbExpressions:NULL);    
-  //DEBUG("Got expression for this tree");
-  //m_matrixElements.emplace_back(
-      //std::make_shared<Particle>(protoParticle),
-      //coupling,
-      //CompiledExpression<std::complex<double>>( 
-        //expression , 
-        //name , 
-        //m_evtType.getEventFormat(), 
-        //m_dbThis?&dbExpressions:NULL ) );
-}
-
-BackgroundPdf::BackgroundPdf( const EventType& type , 
-    AmpGen::MinuitParameterSet& mps,
-    const std::string& prefix ) : 
-  m_protoAmplitudes(mps),
-  m_events(0),
-  m_sim(0),
-  m_evtType(type),
-  m_weight(1),
-  m_weightParam(nullptr),
-  m_prepareCalls(0), 
-  m_lastPrint(0),
-  m_printFreq(0), 
-  m_prefix(prefix),
-  m_stateIsGood(true)
+BackgroundPdf::BackgroundPdf( const EventType& type, const MinuitParameterSet& mps, const std::string& prefix )
+  :   m_evtType  (type)
+      , m_printFreq(NamedParameter<size_t>(     "BackgroundPdf::PrintFrequency", 100)  )
+      , m_dbThis   (NamedParameter<bool>(       "BackgroundPdf::Debug"         , false))
+      , m_verbosity(NamedParameter<bool>(       "BackgroundPdf::Verbosity"     , 0)    )
+  , m_objCache (NamedParameter<std::string>("BackgroundPdf::ObjectCache"   ,"")    )
+  , m_prefix   (prefix)
+      , m_mps(&mps) 
 {
-  //bool useCartesian = AmpGen::NamedParameter<unsigned int>("BackgroundPdf::UseCartesian",true);
-  //m_printFreq       = AmpGen::NamedParameter<unsigned int>("BackgroundPdf::PrintFrequency",100);
-  //m_dbThis          = AmpGen::NamedParameter<unsigned int>("BackgroundPdf::Debug",false);
-  //m_verbosity       = AmpGen::NamedParameter<unsigned int>("BackgroundPdf::Verbosity",0);
-  //auto rules = m_protoAmplitudes.rulesForDecay( type.mother() );
-  //for( auto& p : rules ){
-    //if( p.prefix() != m_prefix  ) continue ; 
-    //std::vector<std::pair<AmpGen::Particle,Coupling > > tmpParticles;
-    //auto fs = type.finalStates();
-    //tmpParticles.emplace_back( AmpGen::Particle( p.name(), fs), p.makeCoupling(useCartesian ) );
-    //do { 
-      //std::vector<std::pair<AmpGen::Particle,Coupling >> newTmpParticles; 
-      //for( auto& particleWithCoupling : tmpParticles ){
-        //auto protoParticle = particleWithCoupling.first;
-        //auto coupling = particleWithCoupling.second; 
-        //auto protoFinalStates = protoParticle.getFinalStateParticles();
-        //if( protoFinalStates.size() == type.size() ){
-          //addMatrixElement( particleWithCoupling );
-          //continue ; /// this particle is fully expanded 
-        //}
-        //std::string nameToExpand = protoParticle.uniqueString(); 
-        //for( auto& ifs : protoFinalStates ){
-          //auto expandedRules = 
-            //m_protoAmplitudes.rulesForDecay( ifs->name() ); /// get rules for decaying particle 
-          //if( expandedRules.size() == 0 ) continue ; 
-          //for( auto& subTree : expandedRules ){
-            //auto expanded_amplitude = replaceAll( nameToExpand , ifs->name(), subTree.name() );
-            //auto fs2 = type.finalStates();
-            //newTmpParticles.emplace_back( 
-                //AmpGen::Particle( expanded_amplitude, fs2 ), Coupling(coupling, subTree, useCartesian) ) ; 
-          //}
-          //break;  // we should only break if there are rules to be expanded ... 
-        //}
-      //}
-      //tmpParticles = newTmpParticles; 
-    //} while ( tmpParticles.size() != 0 ) ; 
-  //}
-  //for( auto& p : m_matrixElements ){
-    //p.pdf.resolveParameters( mps );
-    //m_lib.add( &p.pdf );
-  //}
-  //m_isConstant = isFixedPDF();
-  //m_coefficients.resize( m_matrixElements.size() );
-  //m_normalisations.resize( m_matrixElements.size() , m_matrixElements.size() );
 }
 
-void BackgroundPdf::prepare(){
-  if( m_weightParam != 0 ) m_weight = m_weightParam->mean();
-  //if( m_isConstant && m_prepareCalls != 0 ) return ;
-  //if( m_prepareCalls == 0 ) resync(); // ensure pointers are syncronised //  
-  //preprepare();
-  //std::vector<unsigned int> changedPdfIndices;
-  //auto tStartEval = std::chrono::high_resolution_clock::now();
-  //bool printed=false;
-
-  //for( unsigned int i = 0 ; i < m_matrixElements.size(); ++i){
-    //auto& pdf = m_matrixElements[i].pdf;
-    //if( m_prepareCalls != 0 && ! pdf.hasExternalsChanged() ) continue ;
-    //auto t_start = std::chrono::high_resolution_clock::now();
-    //if( m_events != 0 ){
-      //if( i >= m_cacheAddresses.size() ) 
-        //m_cacheAddresses.push_back( m_events->registerExpression(pdf) );
-      //m_events->updateCache( pdf, m_cacheAddresses[i] );
-    //}
-    //else if( i == 0 && m_verbosity ){
-      //WARNING("No data events specified for " << this);
-    //}
-    //auto t_end = std::chrono::high_resolution_clock::now();
-    //auto time  = std::chrono::duration<double, std::milli>(t_end-t_start).count() ;
-    //if( m_verbosity && ( m_prepareCalls > m_lastPrint + m_printFreq || m_prepareCalls == 0 ) ){
-      //INFO(pdf.name() << " (t = " << time << " ms, nCalls = " << m_prepareCalls << ")" );    
-      //printed=true;
-    //}
-    //changedPdfIndices.push_back( i ); 
-    //pdf.resetExternals();
-  //}
-  //auto tStartIntegral = std::chrono::high_resolution_clock::now();
-  
-  //if( m_sim != 0 ){
-    //updateNorms(changedPdfIndices); 
-  //}
-  //else if( m_verbosity ) { 
-    //WARNING( "No simulated sample specified for " << this );
-  //}
-
-  //if( m_verbosity && printed ){
-    //auto tNow   = std::chrono::high_resolution_clock::now();
-    //double timeEval  = std::chrono::duration<double, std::milli>(tStartIntegral-tStartEval).count() ;
-    //double timeIntg  = std::chrono::duration<double, std::milli>(tNow-tStartIntegral).count() ;
-    //double timeTotal = std::chrono::duration<double, std::milli>(tNow-tStartEval).count() ;
-    //INFO( "Time Performance: " 
-        //<< "Eval = "     << timeEval   << " ms"
-        //<< ", Integral = " << timeIntg   << " ms"
-        //<< ", Total = "    << timeTotal  << " ms" );
-    //m_lastPrint=m_prepareCalls; 
-  //}
-  //m_norm = norm(); /// update normalisation 
-  //m_prepareCalls++; 
-//}
-
-//void BackgroundPdf::updateNorms( const std::vector<unsigned int>& changedPdfIndices ){
-  //std::vector<bool> integralHasChanged( size()*size() ,0);
- //// INFO( "PDFs to update : " << vectorToString( changedPdfIndices ) ); 
-  //for( auto& i : changedPdfIndices ){
-    //auto& pdf = m_matrixElements[i].pdf;
-    //m_integralDispatch.prepareExpression( pdf );
-  //}
-
-  //for( auto& i : changedPdfIndices ){
-    //for( unsigned int j = 0 ; j < size(); ++j){
-      //if( integralHasChanged[i*size()+j] ) continue ; 
-      //integralHasChanged[i*size()+j] = true;
-      //integralHasChanged[j*size()+i] = true;  
-      //m_integralDispatch.addIntegral( m_matrixElements[i].pdf , m_matrixElements[j].pdf ,
-          //[i,j,this]( const std::complex<double>& val ){
-          ////m_integralDispatch.addIntegral(i,j);
-          //DEBUG( i << " , " << j << " " << " = " << val );
-          //this->m_normalisations.set( i , j , val);
-          //this->m_normalisations.set( j , i , std::conj( val ) );
-          //} );
-    //}
-  //}
-  //m_integralDispatch.flush(); /// compute remaining integrals in the buffer /// 
-}
-
-void BackgroundPdf::debug( const unsigned int& N, const std::string& nameMustContain){ 
-  //for( auto& pdf : m_matrixElements ) pdf.pdf.resetExternals();
-  //if( nameMustContain == "" ) 
-    //for( auto& pdf : m_matrixElements ){
-      //pdf.pdf.debug( m_events->getEvent(N) );
-    //}
-  //else 
-    //for( auto& pdf: m_matrixElements ) 
-      //if( pdf.pdf.name().find( nameMustContain ) != std::string::npos ) 
-        //pdf.pdf.debug( m_events->getEvent(N) );
-
-  //prepare();
-  //INFO( "Pdf = " << prob( m_events->at(N) )); 
-}
-
-std::vector<FitFraction> BackgroundPdf::fitFractions(
-    const LinearErrorPropagator&  linProp )
+void BackgroundPdf::prepare()
 {
-  //struct processCalculator {
-    //std::vector<FFCalculator> calculators; 
-    //std::vector<FitFraction>    fractions;
-    //FitFraction                       sumV;
-    //std::string                      name; 
-    //double sum()  {
-      //double F =0;
-      //for( auto& calc : calculators ) F+=calc();
-      //return F;
-    //};
-    
-    //size_t size() const { return calculators.size() + 1; }
-  //};
-
-  std::vector<FitFraction> outputFractions ; 
-  //std::vector<processCalculator> AllCalculators( m_protoAmplitudes.rules().size() );
-
-  //size_t counter=0;
-  //size_t     pos=0;
-  //for( auto& processes : m_protoAmplitudes.rules() ){
-    //auto& pCalc = AllCalculators[counter++];
-    //pCalc.name  = processes.first;
-    //for( auto& process : processes.second ){  
-      //if( process.head() == m_evtType.mother() && process.prefix() != m_prefix ) continue ; 
-      //std::string parentProcessName = getParentProcess(process.name());
-      //if( parentProcessName == "" ) continue; 
-      //std::string pName, ppName; 
-      //auto pIndex = processIndex(process.name());
-      //auto parentIndex = processIndex( parentProcessName );
-      //pCalc.calculators.emplace_back( process.name(), this, pIndex, parentIndex );
-    //}
-    //pos += pCalc.size();
-  //}
-
-  //bool hardcore = NamedParameter<bool>("Hardcore",false);
-  //bool interference = NamedParameter<bool>("Interference",false);
-  //auto FitFractions = [this,&AllCalculators,&hardcore](){
-    //if( hardcore ) this->prepare();
-    //else this->transferParameters();
-    //std::vector<double> rv; 
-    //for( auto& pCalc : AllCalculators ){
-      //for( auto& calc : pCalc.calculators ){
-        //rv.push_back( calc() );
-      //}
-      //rv.push_back( pCalc.sum() );
-    //}
-    //return rv;
-  //};
-
-  //auto values = FitFractions();
-  //auto errors = linProp.getVectorError( FitFractions, values.size() );
-  //counter=0;
-  //for( auto& pCalc : AllCalculators ){
-    //for( auto& calc : pCalc.calculators ){
-      //pCalc.fractions.emplace_back( calc.name, values[counter], errors[counter] );
-      //counter++; 
-    //}
-    //std::sort ( pCalc.fractions.begin(), pCalc.fractions.end(), []( 
-        //const FitFraction& f1, const FitFraction& f2){ return fabs(f1.val()) > fabs(f2.val()) ; } );
-    //for( auto& f : pCalc.fractions ) 
-      //outputFractions.push_back(f);
-    //pCalc.sumV = FitFraction( "Sum_"+pCalc.name, values[counter], errors[counter] );
-    //outputFractions.push_back( pCalc.sumV );  
-    //counter++; 
-  //}
-  //INFO("Calculating interference fractions");
-  //if( hardcore && interference ){ 
-  //std::vector<FitFraction> interferenceFractions ; 
-  //auto ffForHead = m_protoAmplitudes.rulesForDecay( m_evtType.mother()  );
-  
-  //for( unsigned int i = 0 ; i < ffForHead.size(); ++i ){
-    //auto process_i = ffForHead[i];
-    //if( process_i.prefix() != m_prefix ) continue ; 
-    //for( unsigned int j=i+1; j < ffForHead.size(); ++j ){
-      //auto process_j = ffForHead[j];
-      //if( process_j.prefix() != m_prefix ) continue;
-      //std::string parent_process_name = getParentProcess(process_i.name());
-      //FFCalculator iCalc( process_i.name() + "x"+process_j.name(),
-          //this,
-          //processIndex( process_i.name() ),
-          //processIndex( process_j.name() ),
-          //processIndex( parent_process_name )); 
-      //interferenceFractions.emplace_back( iCalc.name,iCalc() , linProp.getError( [this,&iCalc](){ this->prepare() ; return iCalc(); } ) );
-    //}
-  //}
-  //std::sort ( interferenceFractions.begin(), interferenceFractions.end(), []( 
-        //const FitFraction& f1, const FitFraction& f2){ return fabs(f1.val()) > fabs(f2.val()) ; } );
-  //for( auto& f : interferenceFractions ) outputFractions.push_back( f );
-  //}
-  //for( auto& p : outputFractions ){
-    //INFO( std::setw(100) << p.name() << " " << std::setw(5) << round( p.val()*100,3) << " ± " << round( p.err()*100,3) << " %" );
-  //}
-  return outputFractions; 
 }
 
-void BackgroundPdf::makeBinary( const std::string& fname, const double& normalisation ){
-  //std::ofstream stream( fname );
-  //stream << "#include <complex>" << std::endl;
-  //stream << "#include <vector>" << std::endl; 
-  //for( auto& p : m_matrixElements ) p.pdf.compile( stream );
-  //transferParameters();
-  //stream << std::setprecision(10) ; 
-  //for( auto& p : m_matrixElements ) p.pdf.compileWithParameters( stream );
-
-  //stream << "extern \"C\" double FCN( double* E , const int& parity){" << std::endl;
-  //stream << " std::complex<double> amplitude = " << std::endl;
-  //for( unsigned int i = 0 ; i < size(); ++i ){
-    //auto& p = m_matrixElements[i];
-    //int parity = p.decayTree->finalStateParity();
-    //if( parity == -1 ) stream << " double(parity) * ";
-    //stream << "std::complex<double>"<< p.coupling() <<" * ";
-    //stream << "r" << p.pdf.hash() << "( E )";
-    //stream << ( i==size()-1 ? ";" : "+" ) << std::endl;  
-  //}
-  //stream << " return std::norm(amplitude) / "<< normalisation << " ; }" << std::endl; 
-  //stream.close();
+void BackgroundPdf::updateNorms()
+{
 }
 
-
-std::vector<unsigned int> BackgroundPdf::processIndex(const std::string& label) const { 
-  std::vector<unsigned int> indices ;
-  //for( unsigned int i = 0 ; i < m_matrixElements.size();++i ){
-    //bool couplingIncludesThis = false ; 
-    //for( auto& reAndIm : m_matrixElements[i].coupling.couplings )
-      //if( reAndIm.first->name().find( label) != std::string::npos ) 
-        //couplingIncludesThis = true ; 
-    //if( couplingIncludesThis ) indices.push_back(i);
-  //}
-  return indices; 
+void BackgroundPdf::debug( const Event& evt, const std::string& nameMustContain )
+{
 }
 
-std::string BackgroundPdf::getParentProcess( const std::string& label ) const {
-  //auto pI = processIndex(label);
-  //if( pI.size() == 0 ) return "";
-  //auto coupling = m_matrixElements[pI[0]].coupling.couplings;
-  //for( unsigned int i = 0 ; i < coupling.size(); ++i ){
-    //if( coupling[i].first->name().find(label) != std::string::npos ){
-      //return i==0 ? m_evtType.mother() : coupling[i-1].first->name();
-    //}
-  //}
-  return "";
+std::vector<FitFraction> BackgroundPdf::fitFractions(const LinearErrorPropagator& linProp)
+{
+  std::vector<FitFraction> outputFractions;
+  return outputFractions;
 }
 
-
-unsigned int BackgroundPdf::getPdfIndex( const std::string& name ) const {
-  //for( unsigned int i = 0 ; i < size() ; ++i ){
-    //if( m_matrixElements[i].decayTree->uniqueString() == name ) return i;
-  //}
-  //ERROR("Component " << name << " not found");
-  return 999; 
-}
-
-bool BackgroundPdf::isFixedPDF() const {
-  //for( auto& p : m_matrixElements ){
-    //auto params = p.getDependencies();
-    //for( auto& param : params )
-      //if( param->iFixInit() == 0 ) return false; 
-  //}
-  return true; 
-}
-
-void BackgroundPdf::PConjugate(){
-  //for( auto& amp : m_matrixElements ){
-    //if( amp.decayTree->finalStateParity() == - 1 ){
-      //auto& top_coupling = *amp.coupling.couplings.begin();
-      //top_coupling.second->setCurrentFitVal( top_coupling.second->mean() + M_PI );
-    //} 
-  //}  
-}
-
-std::complex<double> BackgroundPdf::getValNoCache( const Event& evt  ) {
+complex_t BackgroundPdf::getValNoCache( const Event& evt ) const
+{
   std::complex<double> value(0,0);
-  //for( unsigned int i = 0 ; i < m_matrixElements.size(); ++i ){
-    //value += m_coefficients[i] * m_matrixElements[i].pdf(evt);
-  //}
-  return value ; 
+  INFO("GET VAL BEING CALLED NO CACHE");
+  return value; 
 }
 
-void BackgroundPdf::preprepare(){
-  //if( ! m_lib.isReady() ){
-    
-    //std::string libname = NamedParameter<std::string>("Lib::" + m_prefix+
-        //m_matrixElements[0].decayTree->name() , "");
-    
-    //INFO( libname );
-    //m_lib.link( FCNLibrary::RECOMPILE   | ( m_dbThis & FCNLibrary::DEBUG )  , libname ); 
-  //}
-  //transferParameters();
-
-  //for( auto& mE : m_matrixElements ){
-    //mE.pdf.prepare();
-  //}
+void BackgroundPdf::reset( bool resetEvents )
+{
+  m_prepareCalls                                     = 0;
+  m_lastPrint                                        = 0;
+  if ( resetEvents ){ 
+    m_events = nullptr;
+    m_integrator = Integrator();
+  }
 }
 
-
-void BackgroundPdf::reset(bool resetEvents){
-  m_prepareCalls=0;
-  m_lastPrint=0;
-  m_cacheAddresses.clear();
-  if( resetEvents ){ 
-    m_events = 0;
-    m_sim = 0 ; 
-  };
-}
-void BackgroundPdf::setEvents( EventList& list ){
-  if( m_verbosity ) INFO("Setting events to size = " << list.size() << " for " << this ); 
+void BackgroundPdf::setEvents( const EventList_type& list )
+{
+  DEBUG( "Setting event list with:" << list.size() << " events for " << this );
   reset();
-  m_events=&(list); 
-  //m_cache.allocate(m_events, m_matrixElements);
+  for( auto& me : m_matrixElements ){ DEBUG("Registering: " << me.name() ) ; }
+  if( m_ownEvents && m_events != nullptr ) delete m_events; 
+  m_events = &list;
+  m_cache.allocate(m_events, m_matrixElements); 
 }
 
-void BackgroundPdf::setMC(EventList& sim ){
-  if( m_verbosity ) INFO("Setting MC = " << &sim << " for " << this ); 
+
+void BackgroundPdf::setMC( const EventList_type& sim )
+{
+  if ( m_verbosity ) INFO( "Setting norm. event list with:" << sim.size() << " events for " << this );
   reset();
   m_integrator = Integrator( &sim, m_matrixElements );
 }
 
-double BackgroundPdf::norm() const {
+real_t BackgroundPdf::norm() const
+{
   std::complex<double> acc(0,0);
-  //for( unsigned int i=0;i<m_coefficients.size();++i){
-    //for( unsigned int j=0;j<m_coefficients.size();++j){
-      //auto val = m_normalisations.get(i,j)*m_coefficients[i]*std::conj(m_coefficients[j]);
-      //acc += val ;
+
+  //return norm(m_normalisations);
+  return acc.real();
+}
+
+real_t BackgroundPdf::norm(const Bilinears& norms) const
+{
+  complex_t acc(0, 0);
+  //for ( size_t i = 0; i < size(); ++i ) {
+  // for ( size_t j = 0; j < size(); ++j ) {
+       //INFO( i << " " << j << " " << m_matrixElements[i].coefficient * std::conj(m_matrixElements[j].coefficient) << " " <<  ( i > j ? std::conj(norm(j,i)) : norm(i,j) ) );
+  //    acc += m_matrixElements[i].coefficient * std::conj(m_matrixElements[j].coefficient)* ( i > j ? std::conj(norm(j,i)) : norm(i,j) );
     //}
   //}
   return acc.real();
 }
 
-double BackgroundPdf::norm(const Bilinears& norms ) const {
-  std::complex<double> acc(0,0);
-  //for( unsigned int i=0;i<m_coefficients.size();++i){
-    //for( unsigned int j=0;j<m_coefficients.size();++j){
-      //auto val = norms.get(i,j)*m_coefficients[i]*std::conj(m_coefficients[j]);
-      //acc += val ;
-    //}
+complex_t BackgroundPdf::norm(const size_t& x, const size_t& y) const
+{
+  return m_normalisations.get(x, y);
+}
+
+void BackgroundPdf::transferParameters()
+{
+  //for ( auto& mE : m_matrixElements ) mE.coefficient = mE.coupling();
+  //m_weight.update();
+}
+
+void BackgroundPdf::printVal(const Event& evt)
+{
+  /*
+     for ( auto& mE : m_matrixElements ) {
+     unsigned int address = std::distance( &mE , &m_matrixElements[0] );
+     std::cout << mE.decayTree.decayDescriptor() << " = " << mE.coefficient << " x " << m_cache( evt.index() / utils::size<real_v>::value, address )
+     << " address = " << address << " " << mE( evt ) << std::endl;
+     if( mE.coupling.size() != 1 ){
+     std::cout << "CouplingConstants: " << std::endl;
+     mE.coupling.print();
+     std::cout << "================================" << std::endl;
+     }
+     }
+     */
+}
+
+complex_t BackgroundPdf::getVal( const Event& evt ) const
+{
+  complex_v value( 0., 0. );
+  //for (unsigned int i = 0 ; i != m_matrixElements.size(); ++i ) {
+  //  value += complex_v( m_matrixElements[i].coefficient ) * m_cache(evt.index() / utils::size<real_v>::value, i );
   //}
-  return acc.real();
+#if ENABLE_AVX
+  //return utils::at(value, evt.index() % utils::size<real_v>::value);
+  INFO("GET VAL BEING CALLED")
+#else 
+  return value;
+#endif
 }
 
-std::complex<double> BackgroundPdf::norm ( const unsigned int& x, const unsigned int & y ) const { 
-  return m_normalisations.get(x,y) ; 
+real_v BackgroundPdf::operator()( const real_v* /*evt*/, const unsigned block ) const 
+{
+      INFO("OPERATOR BEING CALLED");
+  complex_v value( 0., 0. );
+  for ( const auto& mE : m_matrixElements ) 
+  {
+    unsigned address = &mE - &m_matrixElements[0];
+    value += complex_v(mE.coefficient) * m_cache(block, address); 
+  }
+  //return (m_weight/m_norm ) * utils::norm(value);
+  return m_weight;
 }
 
-void BackgroundPdf::transferParameters(){
-  //for( unsigned int i=0;i<m_matrixElements.size();++i ){
-    //m_coefficients[i]= m_matrixElements[i].coupling() ;
-  //}
-}
-void BackgroundPdf::printVal( const Event& evt,bool isSim ){
-  //for( unsigned int i = 0 ; i < m_coefficients.size(); ++i){
-    //unsigned int address = m_cacheAddresses[i];
+#if ENABLE_AVX
 
-    //std::cout <<  m_matrixElements[i].decayTree->uniqueString() 
-      //<< " = " << m_coefficients[i] << " x " << 
-      //evt.getCache(address) << " address = " << address << " " << m_matrixElements[i].pdf(evt)  << std::endl; 
-    //std::cout << "Couplings: " << std::endl; 
-    //for( auto& ci : m_matrixElements[i].coupling.couplings ){
-      //std::cout << ci.first->name() << " " << ci.first->mean() << " " << ci.second->mean() << std::endl; 
-    //}
+//double BackgroundPdf::operator()( const double* /*evt*/, const unsigned block ) const 
+//{
+//  return operator()((const real_v*)nullptr, block / utils::size<real_v>::value ).at( block % utils::size<real_v>::value );
+//}
+#endif
 
-       //std::cout << "================================" << std::endl;  
-  //}
-}
 
-void BackgroundPdf::resync() {
-  //for( auto& m : m_matrixElements ){
-    //m_lib.updatePtr( &m.pdf );
-  //}
+std::function<real_t(const Event&)> BackgroundPdf::evaluator(const EventList_type* ievents) const 
+{
+  auto events = ievents == nullptr ? m_integrator.events<EventList_type>() : ievents;  
+  FunctionCache<EventList_type, complex_v, Alignment::AoS> store(events, m_matrixElements);
+  for( auto& me : m_matrixElements ) store.update(me);
+  std::vector<double> values( events->aligned_size() );
+  #ifdef _OPENMP
+  #pragma omp parallel for
+  #endif
+  for( unsigned int block = 0 ; block < events->nBlocks(); ++block )
+  {
+    utils::store( values.data() + block * utils::size<real_v>::value,  (m_weight * events->bkgPDF(block))  );
+  }
+  return arrayToFunctor<real_t, typename EventList_type::value_type>(values);
 }
 
+std::function<complex_t(const Event&)> BackgroundPdf::amplitudeEvaluator(const EventList_type* ievents) const 
+{
+  auto events = ievents == nullptr ? m_integrator.events<EventList_type>() : ievents;  
+  FunctionCache<EventList_type, complex_v, Alignment::AoS> store(events, m_matrixElements);
+  for( auto& me : m_matrixElements ) store.update( me );
+  std::vector<complex_t> values( events->aligned_size() );
+  #ifdef _OPENMP
+  #pragma omp parallel for
+  #endif
+  for( unsigned int block = 0 ; block < events->nBlocks(); ++block )
+  {
+    complex_v amp(0.,0.);
+    for( unsigned j = 0 ; j != m_matrixElements.size(); ++j ) 
+      amp = amp + complex_v(m_matrixElements[j].coefficient) * store(block, j);
+    for( unsigned k = 0; k != utils::size<complex_v>::value; ++k )
+    {
+      values[ block * utils::size<complex_v>::value + k] = utils::at( amp, k ); 
+    }
+  }
+  return arrayToFunctor<complex_t, typename EventList_type::value_type>(values);
+}
+
+
+BackgroundPdf::~BackgroundPdf()
+
+{
+  if( m_ownEvents && m_events !=nullptr ) delete m_events; 
+}
