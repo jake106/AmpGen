@@ -310,29 +310,39 @@ FitResult* doFit(std::vector<EventList_type> data, std::vector<EventList_type> m
      (i.e. the likielihood, and a set of MinuitParameters. */
  
   SimFit likelihood;
- 
+
+  bool sig_only; 
   std::vector<CoherentSum> fcs(data.size());
   std::vector<BackgroundPdf> fcb(data.size());
 
-  //std::vector<SumPDF<EventList_type, CoherentSum&>> pdfs;
-
   std::vector<SumPDF<EventList_type, CoherentSum&, BackgroundPdf&>> pdfs;
+  std::vector<SumPDF<EventList_type, CoherentSum&>> pdfs_sig;
 
-  pdfs.reserve(data.size());
-
-  for(size_t i = 0; i < data.size(); ++i){
-    fcs[i] = CoherentSum(data[i].eventType(), MPS);
-    fcb[i] = BackgroundPdf(data[i].eventType(), MPS);
-    fcs[i].setWeight(MPS["fPDF"]);
-    fcb[i].setWeight(MPS["fBkg"]);
-    fcs[i].setMC(mc[i]);
-    fcb[i].setMC(mc[i]);
-    pdfs.emplace_back( make_pdf(fcs[i], fcb[i]) );
-    //pdfs.emplace_back( make_pdf<EventList_type>(fcs[i]) );
-    pdfs[i].setEvents(data[i]);
-    //auto& mci = mc[i];
-    //for_each( pdfs[i].pdfs(), [&mci](auto& pdf){pdf.setMC(mci);});
-    likelihood.add( pdfs[i] );
+  if ( NamedParameter<bool>("BkgPDF",false) ) {
+    sig_only = false;
+    pdfs.reserve(data.size());
+    for(size_t i = 0; i < data.size(); ++i){
+      fcs[i] = CoherentSum(data[i].eventType(), MPS);
+      fcb[i] = BackgroundPdf(data[i].eventType(), MPS);
+      fcs[i].setWeight(MPS["fPDF"]);
+      fcb[i].setWeight(MPS["fBkg"]);
+      fcs[i].setMC(mc[i]);
+      fcb[i].setMC(mc[i]);
+      pdfs.emplace_back( make_pdf(fcs[i], fcb[i]) );
+      pdfs[i].setEvents(data[i]);
+      likelihood.add( pdfs[i] );
+    }
+  } else {
+    sig_only = true;
+    pdfs_sig.reserve(data.size());
+    for(size_t i = 0; i < data.size(); ++i){
+      fcs[i] = CoherentSum(data[i].eventType(), MPS);
+      pdfs_sig.emplace_back( make_pdf<EventList_type>(fcs[i]) );
+      pdfs_sig[i].setEvents(data[i]);
+      auto& mci = mc[i];
+      for_each( pdfs_sig[i].pdfs(), [&mci](auto& pdf){pdf.setMC(mci);});
+      likelihood.add( pdfs_sig[i] );
+    }
   }
   
   Minimiser mini( likelihood, &MPS );
@@ -391,7 +401,6 @@ FitResult* doFit(std::vector<EventList_type> data, std::vector<EventList_type> m
   {
     INFO("Making figures for sample: " << i << " ...");
     auto evaluator_per_component = ( fcs[0] ).componentEvaluator(&mc[i]);
-    //auto evaluator_per_component_bkg = ( fcb[0] ).componentEvaluator(&mc[i]);
     for( auto proj : data[i].eventType().defaultProjections(NBins) )
     {
       proj(data[i], PlotOptions::Prefix("Data"+std::to_string(i)), PlotOptions::AutoWrite() );
@@ -401,10 +410,12 @@ FitResult* doFit(std::vector<EventList_type> data, std::vector<EventList_type> m
 
     if( NamedParameter<bool>("AllComponents",false ) ) {
       proj(mc[i], evaluator_per_component, PlotOptions::Prefix("amp"+std::to_string(i)), PlotOptions::Norm(data[i].size()), PlotOptions::AutoWrite() );
-      //proj(mc[i], evaluator_per_component_bkg, PlotOptions::Prefix("amp"+std::to_string(i)), PlotOptions::Norm(data[i].size()), PlotOptions::AutoWrite() );
       }
-
+    if( sig_only ) {
+      proj(mc[i]  , pdfs_sig[i].componentEvaluator(&mc[i]), PlotOptions::Prefix("pdf"+std::to_string(i)), PlotOptions::Norm(data[i].size()), PlotOptions::AutoWrite() );
+    } else {
       proj(mc[i]  , pdfs[i].componentEvaluator(&mc[i]), PlotOptions::Prefix("pdf"+std::to_string(i)), PlotOptions::Norm(data[i].size()), PlotOptions::AutoWrite() );
+    }
     }    
   }
   return fr;
