@@ -88,7 +88,8 @@ double AmpGen::dotProduct( const TLorentzVector& p1, const TLorentzVector& p2, c
   return -p1.Dot( p2 ) + p1.Dot( pX ) * p2.Dot( pX ) / pX.Dot( pX );
 }
 
-double AmpGen::PHI( const Event& evt )
+double PHI::operator()( std::vector<Event>::iterator evt ) const { return ( *this )( *evt ); }
+double PHI::operator()( const Event& evt ) const
 {
   TLorentzVector pA_4vec = pFromEvent( evt, 0 );
   TLorentzVector pB_4vec = pFromEvent( evt, 1 );
@@ -112,12 +113,17 @@ double AmpGen::PHI( const Event& evt )
   return phi;
 }
 
-double AmpGen::phi( const Event& evt, int i, int j, int k, int w )
+phi::phi( const unsigned& i, const unsigned& j, const unsigned& k, const unsigned& w )
+    : _i( 1, i ), _j( 1, j ), _k( 1, k ), _w( 1, w )
 {
-  TLorentzVector pA_4vec = pFromEvent( evt, i );
-  TLorentzVector pB_4vec = pFromEvent( evt, j );
-  TLorentzVector pC_4vec = pFromEvent( evt, k );
-  TLorentzVector pD_4vec = pFromEvent( evt, w );
+} 
+double phi::operator()( std::vector<Event>::iterator evt ) const { return ( *this )( *evt ); }
+double phi::operator()( const Event& evt ) const
+{
+  TLorentzVector pA_4vec = pFromEvent( evt, _i );
+  TLorentzVector pB_4vec = pFromEvent( evt, _j );
+  TLorentzVector pC_4vec = pFromEvent( evt, _k );
+  TLorentzVector pD_4vec = pFromEvent( evt, _w );
   TLorentzVector pM      = pA_4vec + pB_4vec + pC_4vec + pD_4vec;
   pA_4vec.Boost( -pM.BoostVector() );
   pB_4vec.Boost( -pM.BoostVector() );

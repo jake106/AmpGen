@@ -58,8 +58,20 @@ namespace AmpGen
     */
   double acoplanarity( const Event& evt );
 
-  double PHI( const Event& evt );
-  double phi( const Event& evt, int i, int j, int k, int w );
+  class PHI {
+    public:
+      double operator()(std::vector<Event>::iterator evt ) const;
+      double operator()( const Event& evt ) const;
+  };
+
+  class phi {
+    public:
+      phi(const unsigned& i, const unsigned& j, const unsigned& k, const unsigned& w );
+      double operator()( std::vector<Event>::iterator evt ) const;
+      double operator()( const Event& evt ) const;
+    private:
+      std::vector<unsigned> _i, _j, _k, _w;
+  };
 
   std::vector<double> rotate( const std::vector<double>& input, const std::vector<double>& n, const double& v );
   void boost( Event& evt, const std::tuple<double, double, double>& n, const double& v );
