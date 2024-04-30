@@ -67,7 +67,6 @@ std::vector<FitFraction> BackgroundPdf::fitFractions(const LinearErrorPropagator
 complex_t BackgroundPdf::getValNoCache( const Event& evt ) const
 {
   std::complex<double> value(0,0);
-  INFO("GET VAL BEING CALLED NO CACHE");
   return value; 
 }
 
@@ -154,7 +153,6 @@ complex_t BackgroundPdf::getVal( const Event& evt ) const
   //}
 #if ENABLE_AVX
   //return utils::at(value, evt.index() % utils::size<real_v>::value);
-  INFO("GET VAL BEING CALLED")
 #else 
   return value;
 #endif
@@ -162,7 +160,6 @@ complex_t BackgroundPdf::getVal( const Event& evt ) const
 
 real_v BackgroundPdf::operator()( const real_v* /*evt*/, const unsigned block ) const 
 {
-      INFO("OPERATOR BEING CALLED");
   complex_v value( 0., 0. );
   for ( const auto& mE : m_matrixElements ) 
   {

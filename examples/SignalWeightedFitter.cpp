@@ -405,7 +405,7 @@ FitResult* doFit(std::vector<EventList_type> data, std::vector<EventList_type> m
     {
       proj(data[i], PlotOptions::Prefix("Data"+std::to_string(i)), PlotOptions::AutoWrite() );
     }
-    for( auto proj : data[i].eventType().defaultProjections(200) )
+    for( auto proj : data[i].eventType().defaultProjections(NBins) )
     {
 
     if( NamedParameter<bool>("AllComponents",false ) ) {
