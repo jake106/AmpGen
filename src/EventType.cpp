@@ -176,8 +176,8 @@ std::vector<Projection> EventType::defaultProjections(const unsigned& nBins) con
   }
   Projection pDD( HelicityCosine( {0},{0,1,2,3},{0,1} ), "hcos_CM_0_B_01" , "CMthetaDD", nBins, -1,1);
   Projection pKpi( HelicityCosine( {2},{0,1,2,3},{2,3} ), "hcos_CM_2_B_23" , "CMthetaKpi", nBins, -1,1);
-  Projection phi1( PHI(), "phi_01_23", "phi", nBins, -1,1);
-  Projection phi2( phi(0, 2, 1, 3), "phi_02_13", "phi2", nBins, -1,1);
+  Projection phi1( PHI(), "phi_01_23", "phi", nBins, -3.15,3.15);
+  Projection phi2( phi(0, 2, 1, 3), "phi_02_13", "phi2", nBins, -3.15,3.15);
   Projection pDK( HelicityCosine( {0},{0,1,2,3},{0,2} ), "hcos_CM_0_B_02" , "CMthetaDK", nBins, -1,1);
   Projection pDbPi( HelicityCosine( {1},{0,1,2,3},{1,3} ), "hcos_CM_1_B_13" , "CMthetaDbPi", nBins, -1,1);
   projections.emplace_back(pDD);
